@@ -1,0 +1,44 @@
+{
+  "environment": {
+    "timestamp": "2026-09-19T20:37:46.678221+00:00",
+    "platform": "Linux-6.18.33.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "versions": {
+      "torch": "2.10.0+cu128",
+      "triton": "3.6.0",
+      "transformers": "4.57.6",
+      "bitsandbytes": "0.49.1"
+    },
+    "cuda": "12.8",
+    "gpu": "NVIDIA GeForce RTX 5070 Ti",
+    "capability": [
+      12,
+      0
+    ],
+    "source_sha256": {
+      "inference_engine/__init__.py": "16ceae00022f1d2985eb6f2195bbe6e5fcffcaa1070da730e81e420db19254f5",
+      "inference_engine/attention.py": "184dc3e2f25910186d4f0ca083b93350ee4a664ec71e8dce2f9926ef8fc9daa5",
+      "benchmarks/__init__.py": "92f991bfde1da88cabbb8490b790fa34f7bdef7c6ab098cb899cb32c561b58bf",
+      "benchmarks/attention.py": "8457319244b53a9c08a6d8694dd3b875b609c29d4249ee92df62038a4bf512d9",
+      "benchmarks/common.py": "29211d10657d7347e72fb5cff1f90de5b902097229c4ba3efe3e9cbb760738af",
+      "benchmarks/download_model.py": "3d73b1ca24d307948c6a7de4f47e79a1f098c4035fbb63c55647dcc471413bf2",
+      "benchmarks/vllm_batch.py": "d99dfdb7d02db7e6f11dc1c39957348deeda600a22e5bebff4a1ec0c111a4704",
+      "benchmarks/weights.py": "b8fa8e135bb0dbdbcd1507beff75148be19962c2e148791363de2a1883336df5"
+    },
+    "total_vram_bytes": 17094475776,
+    "git_commit": "fa32edceea85be8b72b82dfb9358fd4f6662a4b3"
+  },
+  "configuration": {
+    "mode": "nf4",
+    "model": "mistralai/Mistral-7B-Instruct-v0.2",
+    "revision": "63a8b081895390a26e140280378bc85ec8bce07a",
+    "output": "results/weights-nf4.json"
+  },
+  "weight_storage_bytes": 4450703616,
+  "devices": [
+    "cuda:0"
+  ],
+  "cuda_allocation_delta_bytes": 4466532864,
+  "note": "Loaded on GPU. Double quantization is off, matching the original notebook.",
+  "forward_logits_finite": true
+}
