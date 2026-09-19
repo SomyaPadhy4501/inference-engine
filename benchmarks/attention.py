@@ -98,16 +98,21 @@ def main():
                 gc.collect()
                 torch.cuda.empty_cache()
 
+        # Report both ratios. Interference only ever adds time, so the minimum is the
+        # robust estimate of true kernel cost; the median is what a loaded GPU felt like.
         for base in ('naive', 'sdpa'):
             if all('median_ms' in row['timings'][key] for key in (base, 'triton')):
                 row[f'{base}_over_triton'] = (row['timings'][base]['median_ms']
                                               / row['timings']['triton']['median_ms'])
+                row[f'{base}_over_triton_min'] = (row['timings'][base]['min_ms']
+                                                  / row['timings']['triton']['min_ms'])
         report['rows'].append(row)
         save(a.output, report)
         print(f"n={n:>6} " + " ".join(
-            f"{name}={t.get('median_ms', float('nan')):.3f}ms" for name, t in row['timings'].items())
-            + f"  naive/triton={row.get('naive_over_triton', float('nan')):.2f}x"
-              f"  sdpa/triton={row.get('sdpa_over_triton', float('nan')):.2f}x", flush=True)
+            f"{name}={t.get('min_ms', float('nan')):.3f}ms" for name, t in row['timings'].items())
+            + f"  naive/triton={row.get('naive_over_triton_min', float('nan')):.2f}x"
+              f"  sdpa/triton={row.get('sdpa_over_triton_min', float('nan')):.2f}x"
+              " (min-of-N)", flush=True)
         del q, k, v
         torch.cuda.empty_cache()
 

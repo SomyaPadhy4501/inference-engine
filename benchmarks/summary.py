@@ -12,24 +12,36 @@ def load(path):
 
 
 def attention_table(path):
+    """Lead with min-of-N. A contended GPU only ever makes a sample slower, so the
+    fastest sample is the best estimate of true kernel cost; the median drifts with
+    whatever else was running. Both are printed so the gap stays visible."""
     data = load(path)
     if not data or 'rows' not in data:
         return
     cfg, env = data['configuration'], data['environment']
     print(f"\n{path}")
     print(f"  {env['gpu']}  batch={cfg['batch']} heads={cfg['heads']} dim={cfg['dim']}"
-          f" {'decode' if cfg['decode'] else 'prefill'}")
+          f" {'decode' if cfg['decode'] else 'prefill'}  {cfg['repeats']} reps")
     print(f"  {'seq':>6} {'naive':>10} {'triton':>10} {'sdpa':>10} "
-          f"{'naive/triton':>13} {'sdpa/triton':>12}")
+          f"{'naive/tri':>10} {'sdpa/tri':>9} {'sdpa/tri':>10}")
+    print(f"  {'':>6} {'(min ms)':>10} {'(min ms)':>10} {'(min ms)':>10} "
+          f"{'(min)':>10} {'(min)':>9} {'(median)':>10}")
     for row in data['rows']:
+        t = row['timings']
+
         def ms(name):
-            t = row['timings'].get(name, {})
-            return f"{t['median_ms']:.3f}" if 'median_ms' in t else 'n/a'
-        def ratio(name):
-            r = row.get(f'{name}_over_triton')
-            return f"{r:.2f}x" if r else 'n/a'
+            return f"{t[name]['min_ms']:.3f}" if 'min_ms' in t.get(name, {}) else 'n/a'
+
+        def ratio(name, stat):
+            # Back-fill for runs saved before min ratios were recorded.
+            key = f'{stat}_ms'
+            if key in t.get(name, {}) and key in t.get('triton', {}):
+                return f"{t[name][key] / t['triton'][key]:.2f}x"
+            return 'n/a'
+
         print(f"  {row['length']:>6} {ms('naive'):>10} {ms('triton'):>10} {ms('sdpa'):>10} "
-              f"{ratio('naive'):>13} {ratio('sdpa'):>12}")
+              f"{ratio('naive', 'min'):>10} {ratio('sdpa', 'min'):>9} "
+              f"{ratio('sdpa', 'median'):>10}")
 
 
 def weights_table(fp16_path, nf4_path):

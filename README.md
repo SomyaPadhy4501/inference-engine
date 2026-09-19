@@ -10,31 +10,48 @@ up, that is stated plainly.
 
 ## Headline results (RTX 5070 Ti, 16GB, BF16)
 
+All figures are **min-of-N** over 50–100 samples. Interference from other GPU work only
+ever makes a sample slower, so the fastest sample is the best estimate of true kernel
+cost. This matters here: these runs were taken with a game on the GPU, and the median
+ratios swung by 40% while the min ratios stayed flat to within 0.02x across independent
+runs. `benchmarks/summary.py` prints both so the gap is visible.
+
 **Decode — the custom kernel wins.** One query against a full KV cache, batch 8,
 32 heads, dim 128. This is the memory-bound regime that dominates long-context
 generation, and split-KV parallelization is what makes it fast at low batch.
 
-| KV length | Triton | PyTorch SDPA | speedup vs SDPA |
+| KV length | Triton | SDPA | speedup vs SDPA |
 |---:|---:|---:|---:|
-| 1024 | 0.172 ms | 0.218 ms | 1.27x |
-| 2048 | 0.331 ms | 0.425 ms | 1.28x |
-| 4096 | 0.666 ms | 1.059 ms | **1.59x** |
-| 8192 | 1.907 ms | 3.155 ms | 1.65x* |
-| 16384 | 4.983 ms | 6.844 ms | 1.37x* |
+| 1024 | 0.169 ms | 0.216 ms | 1.28x |
+| 2048 | 0.325 ms | 0.421 ms | 1.30x |
+| 4096 | 0.640 ms | 0.830 ms | 1.30x |
+| 8192 | 1.265 ms | 1.649 ms | 1.30x |
+| 16384 | 2.713 ms | 3.575 ms | 1.32x |
+
+Flat at **1.30x** across a 16x range of context lengths, reproduced across two
+independent runs (at 8192: Triton 1.264/1.265 ms, SDPA 1.649/1.649 ms). The naive
+baseline is only 1.05x slower than Triton here — decode never materializes a large
+score matrix, so there is nothing for tiling to save. The win is over SDPA, whose
+single-query path leaves the GPU underused.
 
 **Prefill — the custom kernel loses.** Full-sequence attention, batch 2, 32 heads.
 
 | Seq | naive | Triton | SDPA | naive/Triton | SDPA/Triton |
 |---:|---:|---:|---:|---:|---:|
-| 512 | 0.329 ms | 0.161 ms | 0.118 ms | 2.04x | 0.73x |
-| 1024 | 2.753 ms | 0.581 ms | 0.444 ms | 4.74x | 0.76x |
-| 2048 | 10.339 ms | 4.391 ms | 2.952 ms | 2.35x | 0.67x |
-| 4096 | 46.421 ms | 16.332 ms | 12.111 ms | 2.84x | 0.74x |
-| 8192 | OOM | 65.274 ms | 47.455 ms | n/a | 0.73x |
+| 512 | 0.322 ms | 0.159 ms | 0.117 ms | 2.03x | 0.74x |
+| 1024 | 1.369 ms | 0.576 ms | 0.439 ms | 2.38x | 0.76x |
+| 2048 | 7.304 ms | 2.422 ms | 1.586 ms | 3.02x | 0.65x |
+| 4096 | 40.579 ms | 11.679 ms | 8.181 ms | 3.47x | 0.70x |
+| 8192 | OOM | 34.299 ms | 41.680 ms | n/a | 1.22x† |
 
-PyTorch SDPA is consistently ~1.35x faster than the hand-written prefill kernel. SDPA
-dispatches to cuDNN/FlashAttention, which is more heavily tuned than anything written
-here. The kernel does beat the naive baseline, but that baseline is a strawman.
+PyTorch SDPA is consistently ~1.4x faster than the hand-written prefill kernel, which
+dispatches to cuDNN/FlashAttention — more heavily tuned than anything written here. The
+kernel does beat the naive baseline by 2.0–3.5x, but that baseline is a strawman.
+
+† The 8192 row is an outlier and should not be quoted: Triton's samples there spanned
+34–65 ms against SDPA's 42–47 ms, and it contradicts every other prefill length
+including 8192 at batch 1 (0.64x). Free VRAM was down to ~8 GB during this run. Re-run
+it on an idle GPU before believing it.
 
 **Weight memory — the NF4 claim holds.**
 
@@ -50,16 +67,11 @@ real GPU load with a verified forward pass, measured at 4.47 GB of CUDA allocati
 against 4.45 GB of counted tensor storage. Tied weights are deduplicated by storage
 pointer, and NF4 quantization state (absmax, code) is included.
 
-\* Numbers marked with an asterisk varied across runs because a game was using the GPU
-during measurement; 8192 decode measured 1.65x and 1.12x on two passes. The 4096 decode
-figure reproduced at 1.59x and 1.60x and is the one to trust. Re-run on an idle GPU to
-tighten the rest.
-
 ## Where the original resume numbers stand
 
 | Original claim | Status |
 |---|---|
-| 4.65x at 8K context | **Does not reproduce as stated.** It is a non-causal attention microbenchmark against a naive materialized-softmax baseline on A100, not LLM inference. On this GPU the naive baseline OOMs at 8K/batch-2/32-head (needs ~25.7 GB), so the exact comparison cannot run at all. At reproducible shapes the naive ratio lands at 2.0–4.7x and swings with shape and GPU load. Against PyTorch SDPA the prefill kernel is *slower*. |
+| 4.65x at 8K context | **Does not reproduce as stated.** It is a non-causal attention microbenchmark against a naive materialized-softmax baseline on A100, not LLM inference. On this GPU the naive baseline OOMs at 8K/batch-2/32-head (needs ~25.7 GB), so the exact comparison cannot run at all. At reproducible shapes the naive ratio peaks at 3.5x. Against PyTorch SDPA the prefill kernel is *slower*. |
 | 3.1x NF4 weight memory | **Holds.** Measured 3.25x, so the original claim was conservative. The notebook's 14.83/4.81 GB came from global CUDA allocations rather than isolated weight storage; the corrected measurement is cleaner and lands in the same place. |
 | "Integrated vLLM" | **Overstated.** vLLM was called as a library. Its paged KV cache and continuous batching are vLLM's own; no custom kernel is wired into it, and the toy page allocator in the notebook is not connected to anything. |
 
@@ -131,9 +143,14 @@ alone, so it wants an A100 40GB; below that the script drops to batch 1 at 8K.
 
 The benchmark validates every custom output against SDPA before timing it, warms up
 through Triton autotuning, times with CUDA events (excluding host dispatch), and saves
-all samples alongside the median. Both baselines are reported: the naive
-materialized-softmax path from the original notebook, and PyTorch SDPA. SDPA is an
-auto-selected backend, not a pinned FlashAttention version.
+every sample alongside the median and the minimum. Both baselines are reported: the
+naive materialized-softmax path from the original notebook, and PyTorch SDPA. SDPA is
+an auto-selected backend, not a pinned FlashAttention version.
+
+Quote the min-of-N ratio, not the median. Contention is one-sided — it can only add
+time — so the median tracks how loaded the machine was, while the minimum converges on
+the kernel's actual cost. A ratio that moves between the two statistics is a warning
+that the run was noisy, which is exactly what the 8192 prefill row shows.
 
 The naive baseline holds the full N x N scores and probabilities at once; where that
 does not fit, the run records a skip rather than silently shrinking the shape.
