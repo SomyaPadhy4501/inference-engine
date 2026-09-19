@@ -80,7 +80,7 @@ benchmarks/vllm_batch.py        vLLM batched generation throughput
 benchmarks/summary.py           print all results as tables
 tests/                          correctness vs SDPA, storage accounting
 results/                        saved measurements
-reproduce_colab.ipynb           run the whole set on a cloud GPU
+run_cloud.sh                    run the whole set on a cloud GPU
 ```
 
 ## Running it
@@ -113,6 +113,19 @@ python -m virtualenv .venv-vllm && ./.venv-vllm/bin/pip install vllm bitsandbyte
 
 Close other GPU workloads first. Timings are noise-sensitive, and a game or a browser
 with hardware acceleration will move the numbers by tens of percent.
+
+### On a cloud GPU
+
+`run_cloud.sh` runs everything and adapts dtype and shapes to the GPU it finds:
+
+```bash
+git clone https://github.com/SomyaPadhy4501/inference-engine.git
+cd inference-engine && bash run_cloud.sh
+```
+
+An L4 24GB is enough for BF16 and for FP16 Mistral-7B under vLLM. Reproducing the
+original 8K/batch-2/32-head prefill comparison needs ~26GB for the naive baseline
+alone, so it wants an A100 40GB; below that the script drops to batch 1 at 8K.
 
 ## Measurement protocol
 
